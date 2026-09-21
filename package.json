@@ -1,0 +1,19 @@
+{
+  "name": "so-armacao-checkout",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend de pagamento do Só Armação — Asaas (Pix + cartão) em Vercel Serverless Functions",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npx vercel dev",
+    "deploy": "npx vercel --prod",
+    "test": "node scripts/testa-precos.js && node scripts/testa-validacao.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.116.0"
+  }
+}
