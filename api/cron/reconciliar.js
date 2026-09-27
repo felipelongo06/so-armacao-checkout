@@ -23,8 +23,8 @@ import { metaPurchase, ga4Purchase } from '../../lib/tracking.js';
 import { compararSegredo } from '../../lib/validacao.js';
 
 const JANELA_DIAS = Number(process.env.RECON_JANELA_DIAS || 3);
-const MAX_POR_EXECUCAO = Number(process.env.RECON_MAX || 25);
-const CONCORRENCIA = 5;
+const MAX_POR_EXECUCAO = Number(process.env.RECON_MAX || 8);
+const CONCORRENCIA = 8;
 
 // Mapeia a linha do banco pro formato que o tracking.js espera — mesmo
 // mapeamento que o webhook-asaas usa ao chamar dispararConversao.

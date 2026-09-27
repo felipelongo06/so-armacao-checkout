@@ -1,8 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/**/*.js": { "maxDuration": 15 },
-    "api/cron/reconciliar.js": { "maxDuration": 60 }
+    "api/**/*.js": { "maxDuration": 15 }
   },
   "crons": [
     { "path": "/api/cron/reconciliar", "schedule": "0 9 * * *" }
