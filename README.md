@@ -49,14 +49,24 @@ confirma o dinheiro — nunca na tela de "obrigado", que qualquer um recarrega.
 | `api/webhook-asaas.js` | Recebe eventos do Asaas. Autentica, deduplica, confere valor, dispara tracking. |
 | `api/pedido/[id].js` | Polling de status da tela de Pix. |
 | `lib/asaas.js` | Cliente HTTP. Único lugar que toca a chave. |
-| `lib/catalogo.js` | **Autoridade de preço.** Leve 2/3, frete, piso de R$ 89,90. |
+| `api/catalogo.js` | Catálogo público (JSON) que a loja lê: modelos, cores, preços, estoque, facetas dos filtros. |
+| `api/cotar.js` | Cotação do carrinho pela mesma regra do checkout (preço, Leve 2/3, frete). A loja nunca calcula sozinha. |
+| `api/bling/auth.js` · `callback.js` | Conexão OAuth com o Bling (uma vez; o token renova sozinho). |
+| `api/bling/sync.js` | Sincroniza o catálogo inteiro Bling → `produtos` (cron diário + à mão). |
+| `api/bling/webhook.js` | Recebe produto/estoque do Bling em tempo real (assinatura HMAC). |
+| `api/bling/migrar-tags.js` | Uma vez: cria os campos customizados (Gênero, Material, Ocasião, Tom de pele) e copia as tags. |
+| `lib/bling.js` | Cliente da API v3 do Bling: tokens, refresh, limite de 3 req/s. |
+| `lib/catalogo-sync.js` | Mapeamento produto do Bling → linha de `produtos` (uma por cor). |
+| `lib/catalogo.js` | **Autoridade de preço.** Preço e estoque da tabela `produtos`, Leve 2/3, frete. |
 | `lib/tracking.js` | Fan-out server-side: Meta CAPI, GA4 MP. |
 | `lib/validacao.js` | CPF/e-mail/CEP, hash LGPD, comparação em tempo constante. |
 | `lib/carregar-env.js` | Lê o `vercel-env.txt` nos scripts, pra chave nenhuma ir pro histórico. |
 | `db/schema.sql` | Tabelas, RLS e as views de reconciliação. |
+| `db/migracao-catalogo-bling.sql` | Colunas do catálogo Bling, limpeza dos produtos de teste, fim do piso de preço, tabelas de tokens/log. |
 | `scripts/configurar.sh` | Gera os segredos, coleta as chaves e envia pra Vercel. |
 | `scripts/smoke-test.js` | Confere conta, chave Pix, webhook e env vars. |
-| `scripts/testa-precos.js` | 12 testes da regra de preço (rodam offline). |
+| `scripts/testa-precos.js` | 16 testes da regra de preço e estoque (rodam offline). |
+| `scripts/testa-sync.js` | 10 testes do mapeamento Bling → produtos e das assinaturas (offline). |
 | `scripts/testa-validacao.js` | 16 testes de validação/segurança. |
 
 ---
@@ -177,6 +187,64 @@ O smoke-test lê o `vercel-env.txt` da pasta sozinho.
 3. Cadastre o webhook **de novo** na conta de produção (são contas separadas).
 4. Ative a **whitelist de IP** no Asaas com os IPs de saída da Vercel.
 5. Faça um pedido real de R$ 89,90 e estorne.
+
+---
+
+## Catálogo — Bling é a fonte da verdade
+
+A tabela `produtos` não é mais editada à mão: ela é uma cópia do Bling. Uma
+linha por **variação** (modelo + cor), que é o que se vende e tem estoque; o
+produto pai entra denormalizado (nome, formato, gênero, material, ocasião,
+tom de pele, descrição, medidas).
+
+```
+Bling ──(cron diário /api/bling/sync)──► produtos ◄──(webhook produto/estoque)── Bling
+                                            │
+                    /api/catalogo (loja) ◄──┴──► /api/cotar + /api/checkout (preço/estoque)
+```
+
+De onde vem cada campo: **formato** = categoria do Bling (Gatinho, Redondo…);
+**gênero / material / ocasião / tom de pele** = campos customizados do produto
+pai (a API v3 não expõe tags — por isso os campos); **cor** = atributo `Cor:` da
+variação; **preço e estoque** = da variação (saldo virtual); **fotos** = URLs
+externas (jsDelivr); **lente / ponte / haste** = lidos da descrição
+("Lente 55mm · ponte 17mm · haste 140mm").
+
+### Ligar (uma vez)
+
+1. **App no Bling** — developer.bling.com.br → Criar aplicativo. URL de
+   redirecionamento `https://api.soarmacao.com.br/api/bling/callback`. Escopos:
+   Produtos, Estoques, Categorias de produtos, Campos customizados (Pedidos de
+   venda e Notas fiscais podem entrar já, pra próxima fase).
+2. **Variáveis na Vercel** (pelo CLI, nunca pelo painel):
+   `BLING_CLIENT_ID`, `BLING_CLIENT_SECRET`. `CRON_SECRET` já existe e é a
+   chave de admin destes endpoints.
+3. **Banco** — cole `db/migracao-catalogo-bling.sql` no SQL Editor do Supabase.
+   Ela apaga os produtos de teste (tudo que não veio do Bling).
+4. **Autorizar** — no navegador em que o Bling está logado, abra
+   `https://api.soarmacao.com.br/api/bling/auth?chave=<CRON_SECRET>` e clique
+   em Autorizar. A página de retorno lista os próximos passos.
+5. **Migrar as tags** (uma vez) — `…/api/bling/migrar-tags?chave=<CRON_SECRET>`.
+   Cria os 4 campos customizados e preenche cada produto pai com o que estava
+   nas tags no export de 27/09/2026 (`db/tags-bling.js`). Daqui em diante,
+   cadastro novo no Bling preenche os **campos**, não as tags.
+6. **Sincronizar** — `…/api/bling/sync?chave=<CRON_SECRET>`. Se voltar
+   `concluido: false`, abra a URL em `continuar`. Confira em `/api/catalogo`.
+7. **Webhooks** — no app do Bling, aba Webhooks: recursos *Produto* e
+   *Estoque* apontando pra `https://api.soarmacao.com.br/api/bling/webhook`.
+   A assinatura é conferida com o `client_secret`.
+
+O cron `17 5 * * *` (02:17 em SP) refaz o sync completo todo dia e desativa o
+que sumiu do Bling. `bling_sync` guarda o log de cada rodada.
+
+### Regras que continuam no servidor
+
+- O navegador manda `{ sku, qty }`; preço vem de `produtos`. **Sem estoque, sem
+  venda** (`montarPedido` recusa quantidade acima do saldo).
+- Não existe mais piso de preço nem catálogo de fallback: com o Supabase fora,
+  o checkout responde 503 em vez de vender a preço velho.
+- Leve 2/3 e frete são calculados aqui; a loja pede a cotação em `/api/cotar`
+  e mostra o que voltou. Mudar a regra comercial muda a tela junto.
 
 ---
 

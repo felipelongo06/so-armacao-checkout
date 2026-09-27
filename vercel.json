@@ -1,10 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/**/*.js": { "maxDuration": 15 }
+    "api/*.js": { "maxDuration": 15 },
+    "api/pedido/*.js": { "maxDuration": 15 },
+    "api/cron/*.js": { "maxDuration": 15 },
+    "api/bling/*.js": { "maxDuration": 60 }
   },
   "crons": [
-    { "path": "/api/cron/reconciliar", "schedule": "0 9 * * *" }
+    { "path": "/api/cron/reconciliar", "schedule": "0 9 * * *" },
+    { "path": "/api/bling/sync", "schedule": "17 5 * * *" }
   ],
   "headers": [
     {

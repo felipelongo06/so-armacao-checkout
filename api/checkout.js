@@ -12,7 +12,7 @@
  */
 import { asaas, AsaasError, isSandbox } from '../lib/asaas.js';
 import { consultarCep } from '../lib/cep.js';
-import { montarPedido, ValidacaoError, centavosParaReais } from '../lib/catalogo.js';
+import { montarPedido, resumoPublico, ValidacaoError, CatalogoIndisponivelError, centavosParaReais } from '../lib/catalogo.js';
 import { supabase } from '../lib/supabase.js';
 import { aplicarCors, rateLimit, apenasMetodo } from '../lib/http.js';
 import {
@@ -198,6 +198,10 @@ export default async function handler(req, res) {
 
   } catch (err) {
     if (err instanceof ValidacaoError) return res.status(400).json({ erro: err.message });
+    if (err instanceof CatalogoIndisponivelError) {
+      console.error('[checkout] catalogo:', err.message);
+      return res.status(503).json({ erro: 'Catalogo indisponivel no momento. Tente novamente em instantes.' });
+    }
     if (err instanceof AsaasError) {
       console.error('[checkout] Asaas:', err.status, err.code, err.message);
       return res.status(err.status === 401 ? 500 : 400).json({
@@ -211,13 +215,3 @@ export default async function handler(req, res) {
   }
 }
 
-function resumoPublico(p) {
-  return {
-    itens: p.itens.map((i) => ({ sku: i.sku, nome: i.nome, qty: i.qty, preco: centavosParaReais(i.preco_unit_centavos) })),
-    subtotal: centavosParaReais(p.subtotal_centavos),
-    desconto_pct: p.desconto_pct,
-    desconto: centavosParaReais(p.desconto_centavos),
-    frete: centavosParaReais(p.frete_centavos),
-    total: centavosParaReais(p.total_centavos),
-  };
-}

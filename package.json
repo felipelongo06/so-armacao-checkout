@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "npx vercel dev",
     "deploy": "npx vercel --prod",
-    "test": "node scripts/testa-precos.js && node scripts/testa-validacao.js",
+    "test": "node scripts/testa-precos.js && node scripts/testa-validacao.js && node scripts/testa-sync.js",
     "smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {
