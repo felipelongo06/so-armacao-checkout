@@ -34,32 +34,48 @@ await t('1 unidade a R$ 49,00 + frete SP', async () => {
   eq(p.frete_prazo, 'até 3 dias úteis', 'prazo');
 });
 
-await t('Leve 2 aplica 30% sobre o subtotal', async () => {
+await t('2 óculos: 30% só no 2º (nunca sobre o subtotal)', async () => {
   const p = await montarPedido([{ sku: 'LL307-PRETO', qty: 2 }], '09750-000', o);
   eq(p.subtotal_centavos, 9800, 'subtotal');
   eq(p.desconto_pct, 30, 'desconto pct');
-  eq(p.desconto_centavos, 2940, 'desconto');
-  eq(p.total_centavos, 9800 - 2940 + 1990, 'total');
+  eq(p.desconto_centavos, 1470, 'desconto = 30% de 49,00');
+  eq(p.unidades_com_desconto, 1, 'unidades com desconto');
+  eq(p.total_centavos, 9800 - 1470 + 1990, 'total');
 });
 
-await t('Frete gratis acima do piso (pos-desconto)', async () => {
+await t('Sem frete grátis por valor: cliente sempre paga o frete', async () => {
   const p = await montarPedido([{ sku: 'R6058-PRETO-E-VERMELHO', qty: 2 }], '09750-000', o);
-  // 2 x 154,00 = 308,00 ; -30% = 215,60 -> acima de 199,90
-  eq(p.desconto_pct, 30, 'desconto pct');
-  eq(p.frete_centavos, 0, 'frete');
+  // 2 x 154,00 = 308,00 ; -30% no 2º = 261,80 -> frete continua sendo cobrado
+  eq(p.desconto_centavos, 4620, 'desconto');
+  eq(p.frete_centavos, process.env.FRETE_GRATIS_PROMO_ACIMA_DE ? 0 : 1990, 'frete');
 });
 
-await t('Leve 3 aplica 50%', async () => {
+await t('3 óculos: só o 2º tem desconto (não existe Leve 3)', async () => {
   const p = await montarPedido([{ sku: 'LL307-PRETO', qty: 3 }], '01310-100', o);
-  eq(p.desconto_pct, 50, 'desconto pct');
+  eq(p.desconto_pct, 30, 'desconto pct');
   eq(p.subtotal_centavos, 14700, 'subtotal');
-  eq(p.desconto_centavos, 7350, 'desconto');
+  eq(p.desconto_centavos, 1470, 'desconto');
+  eq(p.unidades_com_desconto, 1, 'unidades com desconto');
 });
 
-await t('SKUs diferentes somam unidades para a faixa', async () => {
+await t('4 óculos: fecham 2 pares, 2 descontos', async () => {
+  const p = await montarPedido([{ sku: 'LL307-PRETO', qty: 4 }], '01310-100', o);
+  eq(p.desconto_centavos, 2940, 'desconto');
+  eq(p.unidades_com_desconto, 2, 'unidades com desconto');
+});
+
+await t('SKUs diferentes: o desconto cai no mais barato do par', async () => {
   const p = await montarPedido([{ sku: 'LL307-PRETO', qty: 1 }, { sku: 'R6058-PRETO-E-VERMELHO', qty: 1 }], '09750-000', o);
   eq(p.total_unidades, 2, 'unidades');
   eq(p.desconto_pct, 30, 'desconto pct');
+  eq(p.desconto_centavos, 1470, 'desconto = 30% de 49,00, não de 154,00');
+});
+
+await t('1 óculos: nenhum desconto', async () => {
+  const p = await montarPedido([{ sku: 'R6058-PRETO-E-VERMELHO', qty: 1 }], '09750-000', o);
+  eq(p.desconto_pct, 0, 'desconto pct');
+  eq(p.desconto_centavos, 0, 'desconto');
+  eq(p.unidades_com_desconto, 0, 'unidades com desconto');
 });
 
 await t('SKU repetido é consolidado (e maiúsculas não importam)', async () => {

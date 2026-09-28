@@ -98,8 +98,7 @@ ARQ="vercel-env.txt"
   echo "CPF_HASH_SALT='${CPF_HASH_SALT}'"
   echo
   echo "LEVE2_PCT=30"
-  echo "LEVE3_PCT=50"
-  echo "FRETE_GRATIS_ACIMA_DE=19990"
+  echo "# Sem frete gratis por padrao. Promocao: FRETE_GRATIS_PROMO_ACIMA_DE=<centavos>"
   echo
   echo "GOOGLE_ADS_ENABLED=false"
 } > "$ARQ"
@@ -140,8 +139,6 @@ case "$RESP" in
     enviar CORS_LIBERADO              "true"
     enviar CPF_HASH_SALT              "$CPF_HASH_SALT"
     enviar LEVE2_PCT                  "30"
-    enviar LEVE3_PCT                  "50"
-    enviar FRETE_GRATIS_ACIMA_DE      "19990"
     enviar GOOGLE_ADS_ENABLED         "false"
     printf '\n'
     verde "Pronto. Agora suba o deploy:"
