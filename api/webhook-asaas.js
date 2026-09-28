@@ -11,6 +11,7 @@ import { asaas } from '../lib/asaas.js';
 import { supabase, exigirSupabase } from '../lib/supabase.js';
 import { compararSegredo } from '../lib/validacao.js';
 import { dispararConversao } from '../lib/tracking.js';
+import { criarPedidoNoBling } from '../lib/bling-pedido.js';
 
 const PAGO = new Set(['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED_IN_CASH']);
 const DEVOLVIDO = new Set(['PAYMENT_REFUNDED', 'PAYMENT_PARTIALLY_REFUNDED', 'PAYMENT_CHARGEBACK_REQUESTED']);
@@ -137,7 +138,19 @@ export default async function handler(req, res) {
         .update({ tracking_enviado: resultado, tracking_enviado_em: new Date().toISOString() })
         .eq('id', pedidoId);
 
-      // Gancho pro pos-pagamento (NF-e/estoque/etiqueta no Bling, e-mail, WhatsApp).
+      // ---- 4b. cria o pedido de venda no Bling (NF-e/estoque/etiqueta) ----
+      // Lê o pedido de novo pelo id: já está PAGO e com valor_pago gravado.
+      // Nunca lança (erros viram bling_erro e o cron tenta de novo), então
+      // não segura a resposta 200 do webhook.
+      if (process.env.BLING_PEDIDO_AUTO !== 'false') {
+        try {
+          await criarPedidoNoBling(pedidoId);
+        } catch (e) {
+          console.error('[webhook] Bling pedido:', e.message);
+        }
+      }
+
+      // Gancho extra pro pos-pagamento (e-mail, WhatsApp, ou Bling via n8n se você preferir).
       if (process.env.N8N_WEBHOOK_URL) {
         fetch(process.env.N8N_WEBHOOK_URL, {
           method: 'POST',

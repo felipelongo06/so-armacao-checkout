@@ -7,6 +7,7 @@
  *   cliente: { nome, cpf, email, telefone, cep, numero, complemento },
  *   metodo: "PIX" | "CREDIT_CARD",
  *   parcelas: 1,
+ *   frete: "ECONOMICO" | "EXPRESSO",   // opção de entrega escolhida (preço vem do servidor)
  *   tracking: { ga_client_id, ga_session_id, fbp, fbc, source_url }
  * }
  */
@@ -30,7 +31,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { itens, cliente = {}, metodo = 'PIX', parcelas = 1, tracking = {} } = req.body || {};
+    const { itens, cliente = {}, metodo = 'PIX', parcelas = 1, frete = 'ECONOMICO', tracking = {} } = req.body || {};
 
     // ---- validacao do cliente ----
     const nome = String(cliente.nome || '').trim();
@@ -43,8 +44,8 @@ export default async function handler(req, res) {
 
     const nParcelas = Math.min(Math.max(parseInt(parcelas, 10) || 1, 1), 12);
 
-    // ---- preço recalculado no servidor ----
-    const pedido = await montarPedido(itens, cliente.cep);
+    // ---- preço recalculado no servidor (inclui a cotação do frete escolhido) ----
+    const pedido = await montarPedido(itens, cliente.cep, { frete });
 
     // ---- endereço a partir do CEP (não confia no que o navegador manda) ----
     const endereco = await consultarCep(cliente.cep);
@@ -74,7 +75,21 @@ export default async function handler(req, res) {
     const pedidoId = `SA-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
     if (supabase) {
-      const { error } = await supabase.from('pedidos').insert({
+      // Entrega: o que a cliente escolheu e o serviço real por trás (vai pro Bling).
+      // Fica separado pra, se a migração db/migracao-frete-bling.sql ainda não
+      // tiver rodado, o pedido ser gravado mesmo assim (sem estes campos).
+      const colunasFrete = {
+        frete_opcao: pedido.frete_opcao,
+        frete_origem: pedido.frete_origem,
+        frete_servico_id: pedido.frete_servico?.id ?? null,
+        frete_servico: pedido.frete_servico?.nome ?? null,
+        frete_transportadora: pedido.frete_servico?.transportadora ?? null,
+        frete_custo_centavos: pedido.frete_servico?.custo_centavos ?? null,
+        frete_prazo_dias: pedido.frete_servico?.prazo_dias ?? null,
+        frete_prazo: pedido.frete_prazo,
+        frete_opcoes: pedido.frete_opcoes,
+      };
+      const linha = {
         id: pedidoId,
         status: 'AGUARDANDO_PAGAMENTO',
         metodo,
@@ -104,7 +119,12 @@ export default async function handler(req, res) {
         fbp: tracking.fbp || null,
         fbc: tracking.fbc || null,
         source_url: tracking.source_url || null,
-      });
+      };
+      let { error } = await supabase.from('pedidos').insert({ ...linha, ...colunasFrete });
+      if (error && /column .* does not exist|schema cache/i.test(error.message)) {
+        console.error('[checkout] colunas de frete ausentes — rode db/migracao-frete-bling.sql. Gravando sem elas:', error.message);
+        ({ error } = await supabase.from('pedidos').insert(linha));
+      }
       if (error) console.error('[checkout] falha ao gravar pedido:', error.message);
     }
 

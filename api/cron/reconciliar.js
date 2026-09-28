@@ -21,6 +21,7 @@
 import { exigirSupabase } from '../../lib/supabase.js';
 import { metaPurchase, ga4Purchase } from '../../lib/tracking.js';
 import { compararSegredo } from '../../lib/validacao.js';
+import { pendentesDeBling, criarPedidoNoBling } from '../../lib/bling-pedido.js';
 
 const JANELA_DIAS = Number(process.env.RECON_JANELA_DIAS || 3);
 const MAX_POR_EXECUCAO = Number(process.env.RECON_MAX || 8);
@@ -114,6 +115,23 @@ export default async function handler(req, res) {
       }));
     }
 
+    // ---- 1b. RETRY dos pedidos que não subiram pro Bling ----
+    // Pedido pago cujo POST /pedidos/vendas falhou no webhook (Bling fora,
+    // token vencido, produto sem bling_id). Sem etiqueta, não sai da casa.
+    let blingCriados = 0, blingFalhos = 0;
+    if (process.env.BLING_PEDIDO_AUTO !== 'false') {
+      try {
+        const pend = await pendentesDeBling({ desde, limite: Number(process.env.RECON_BLING_MAX || 15) });
+        for (const p of pend) {
+          const r = await criarPedidoNoBling(p);
+          if (r.ok && !r.jaExistia) blingCriados++;
+          else if (!r.ok) blingFalhos++;
+        }
+      } catch (e) {
+        console.error('[reconciliar] Bling:', e.message);
+      }
+    }
+
     // ---- 2. COBERTURA do periodo ----
     const ok = (r, k) => r.tracking_enviado?.[k] === true;
     const cobertura = {
@@ -126,8 +144,8 @@ export default async function handler(req, res) {
       receita_reais: Math.round(recentes.reduce((s, r) => s + (r.total_centavos || 0), 0)) / 100,
     };
 
-    console.log('[reconciliar] corrigidos=%d avaliados=%d cobertura=%o', corrigidos, falhos.length, cobertura);
-    return res.status(200).json({ ok: true, corrigidos, avaliados: falhos.length, cobertura });
+    console.log('[reconciliar] corrigidos=%d avaliados=%d bling_criados=%d bling_falhos=%d cobertura=%o', corrigidos, falhos.length, blingCriados, blingFalhos, cobertura);
+    return res.status(200).json({ ok: true, corrigidos, avaliados: falhos.length, bling: { criados: blingCriados, falhos: blingFalhos }, cobertura });
 
   } catch (err) {
     console.error('[reconciliar] erro:', err);

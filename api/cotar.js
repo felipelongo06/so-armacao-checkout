@@ -1,7 +1,7 @@
 /**
  * POST /api/cotar
  *
- * Body: { itens: [{ sku, qty }], cep?: "09760-280" }
+ * Body: { itens: [{ sku, qty }], cep?: "09760-280", frete?: "ECONOMICO" | "EXPRESSO" }
  *
  * Devolve o que o pedido custaria AGORA, calculado pela mesma regra do
  * /api/checkout (preço do banco, 30% no 2º óculos, frete). A loja usa isto pra montar
@@ -9,8 +9,11 @@
  * será cobrado, e mudar regra comercial no servidor muda a tela junto.
  *
  * Com `cep`, devolve também o endereço resolvido (ViaCEP no servidor), pra
- * loja mostrar rua/bairro/cidade sem chamar terceiros do navegador.
- * Sem `cep`, frete vem null (carrinho antes do endereço).
+ * loja mostrar rua/bairro/cidade sem chamar terceiros do navegador, e as
+ * opções de entrega (`resumo.frete_opcoes`: Econômico / Expresso, com prazo e
+ * preço) cotadas no Melhor Envio. `frete` diz qual opção entra no total; se a
+ * pedida não existir pra esse CEP, o servidor volta pra ECONOMICO e informa
+ * em `resumo.frete_opcao`. Sem `cep`, frete vem null (carrinho antes do endereço).
  */
 import { montarPedido, resumoPublico, regrasPublicas, ValidacaoError, CatalogoIndisponivelError } from '../lib/catalogo.js';
 import { consultarCep } from '../lib/cep.js';
@@ -26,11 +29,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { itens, cep } = req.body || {};
+    const { itens, cep, frete } = req.body || {};
     const cepLimpo = String(cep || '').replace(/\D/g, '');
     const temCep = cepLimpo.length === 8;
     const [pedido, endereco] = await Promise.all([
-      montarPedido(itens, cepLimpo, { semFrete: !temCep }),
+      montarPedido(itens, cepLimpo, { semFrete: !temCep, frete }),
       temCep ? consultarCep(cepLimpo) : Promise.resolve(null),
     ]);
     res.setHeader('Cache-Control', 'no-store');

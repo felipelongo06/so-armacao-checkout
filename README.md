@@ -291,3 +291,85 @@ vale um desconto à vista no Pix pra empurrar o mix.
 - `v_tracking_falho` — vendas cujo Purchase não subiu pro Meta/GA4.
 
 Rode as duas diariamente. É a reconciliação pedidos × eventos que você pediu.
+
+---
+
+## Frete dinâmico (Econômico / Expresso) + pedido no Bling
+
+Desde 28/09/2026 o frete não é mais a tabela fixa por região: o servidor cota
+o CEP da cliente no **Melhor Envio** (a mesma API da calculadora do painel) e
+oferece **duas opções**, sem citar transportadora — só título, prazo e preço:
+
+- **Econômico** = a etiqueta mais barata do trecho.
+- **Expresso** = entre as que chegam pelo menos `FRETE_EXPRESSO_GANHO_MIN_DIAS`
+  dias antes da Econômica, a mais barata das mais rápidas.
+
+O preço de venda de cada opção é `custo da etiqueta + margem`, arredondado pro
+próximo valor terminado em **,90** (`lib/frete.js` → `precoDeVenda`). A margem
+é a receita nova: quem tem pressa paga o Expresso; a Econômica já sai com uma
+folga sobre o custo. Se o Melhor Envio falhar (sem token, timeout), cai na
+**tabela fixa** de `lib/catalogo.js` como opção única — a loja nunca fica sem
+frete.
+
+A opção escolhida e o **serviço real por trás** (transportadora, custo cotado,
+prazo) ficam gravados no pedido. Quando o pagamento confirma, o webhook cria o
+**pedido de venda no Bling** (`lib/bling-pedido.js`) já com o endereço da
+etiqueta, o frete cobrado e o serviço escolhido nas observações — é só gerar a
+etiqueta no Bling Envios escolhendo exatamente aquele serviço. Se o Bling
+falhar, o cron de reconciliação e `scripts/bling-pedido.js --pendentes` tentam
+de novo.
+
+### Novos arquivos
+
+| Arquivo | Função |
+|---|---|
+| `lib/frete.js` | Cotação no Melhor Envio, regra Econômico/Expresso e a margem (arredonda pra ,90). |
+| `lib/bling-pedido.js` | Cria o contato + pedido de venda no Bling a partir do pedido pago. |
+| `db/migracao-frete-bling.sql` | Colunas de frete/serviço e do vínculo com o Bling em `pedidos`; views `v_margem_frete` e `v_pedidos_sem_bling`. |
+| `scripts/cotar-melhor-envio.js` | Cota um CEP na mão e mostra o que a loja ofereceria (valida o token). |
+| `scripts/bling-pedido.js` | Cria/reprocessa no Bling um pedido pago (`--pendentes`, `--ver`, `--forcar`). |
+| `scripts/testa-frete.js` · `testa-bling-pedido.js` | Testes offline das duas regras. |
+
+### Variáveis de ambiente novas (na Vercel)
+
+**Obrigatória pra cotar de verdade:**
+
+| Variável | O que é |
+|---|---|
+| `MELHOR_ENVIO_TOKEN` | Token da conta: painel do Melhor Envio → Integrações → Área Dev → gerar token com escopo de **cálculo de frete** (`shipping-calculate`). Sem ele, a loja usa a tabela fixa. |
+
+**Margem e regra (têm padrão; ajuste sem mexer no código):**
+
+| Variável | Padrão | O que faz |
+|---|---|---|
+| `FRETE_ECONOMICO_ADICIONAL_CENTAVOS` | `300` | Margem sobre o custo na opção Econômica (R$ 3,00). |
+| `FRETE_EXPRESSO_ADICIONAL_CENTAVOS` | `1000` | Margem sobre o custo na opção Expressa (R$ 10,00). |
+| `FRETE_EXPRESSO_GANHO_MIN_DIAS` | `2` | Expresso só aparece se chegar N dias antes da Econômica. |
+| `FRETE_EXPRESSO_TOLERANCIA_DIAS` | `1` | Aceita até N dias a mais que a mais rápida, se sair mais barato. |
+| `FRETE_DIAS_PREPARO` | `1` | Dias úteis somados ao prazo da transportadora (postagem). |
+| `FRETE_TRANSPORTADORAS` | `Correios,Jadlog,Loggi,JeT` | Empresas aceitas (as com ponto de postagem simples). `*` = todas. |
+| `FRETE_CEP_ORIGEM` | `09607000` | CEP de postagem. |
+| `FRETE_ITEM_CM` / `FRETE_ITEM_KG` | `18x10x7` / `0.3` | Volume e peso por armação. |
+| `FRETE_SEGURO_CENTAVOS` | `0` | Valor declarado no seguro (0 = sem seguro). |
+| `MELHOR_ENVIO_AMBIENTE` | `production` | `sandbox` pra testar sem gastar etiqueta. |
+
+**Bling (opcionais — melhoram o pedido, mas não são obrigatórias):**
+
+| Variável | O que faz |
+|---|---|
+| `BLING_PEDIDO_AUTO` | `false` desliga a criação automática (deixa só o n8n, se você preferir). |
+| `BLING_LOJA_ID` | id da "loja"/canal no Bling pra classificar o pedido. |
+| `BLING_SITUACAO_PAGO_ID` | id da situação em que o pedido nasce (senão fica "Em aberto"). |
+| `BLING_FORMA_PAGAMENTO_PIX_ID` / `_CARTAO_ID` | id da forma de pagamento pra lançar a parcela. |
+| `BLING_PEDIDO_MAX_TENTATIVAS` | padrão 5 — quantas vezes o retry tenta antes de desistir. |
+
+### Passo a passo pra ligar
+
+1. Rode `db/migracao-frete-bling.sql` no SQL Editor do Supabase.
+2. Gere o token no Melhor Envio (escopo de cálculo de frete) e ponha em
+   `MELHOR_ENVIO_TOKEN` na Vercel (`vercel env add`).
+3. Confira com `node scripts/cotar-melhor-envio.js 41820-021` (Salvador) e
+   `... 01310-100` (SP) — dá pra ver a Econômica, a Expressa e a margem.
+4. Deploy por push na `main`.
+5. Faça uma venda de teste e confira: o pedido aparece no Bling com o serviço
+   certo, e `v_margem_frete` mostra cobrado − custo por opção.
