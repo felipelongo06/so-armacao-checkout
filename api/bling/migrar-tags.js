@@ -31,7 +31,7 @@ async function tipoLista() {
 
 async function garantirCampos(orcamento) {
   const campos = await carregarCamposCustomizados();
-  if (!campos.idModulo) throw new Error('Modulo Produtos nao encontrado em /campos-customizados/modulos (escopo "Campos customizados" marcado no app?).');
+  if (!campos.idModulo) throw new Error(`Modulo Produtos nao encontrado em /campos-customizados/modulos. Resposta do Bling: ${JSON.stringify(campos.modulos).slice(0, 800)}`);
   const tipos = await tipoLista();
   const porNome = {};
   for (const c of campos.lista) porNome[semAcento(c.nome)] = c;
