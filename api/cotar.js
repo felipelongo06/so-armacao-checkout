@@ -4,7 +4,7 @@
  * Body: { itens: [{ sku, qty }], cep?: "09760-280" }
  *
  * Devolve o que o pedido custaria AGORA, calculado pela mesma regra do
- * /api/checkout (preço do banco, Leve 2/3, frete). A loja usa isto pra montar
+ * /api/checkout (preço do banco, 30% no 2º óculos, frete). A loja usa isto pra montar
  * o carrinho e o resumo — assim a tela nunca mostra um total diferente do que
  * será cobrado, e mudar regra comercial no servidor muda a tela junto.
  *
