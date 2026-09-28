@@ -341,27 +341,34 @@ vez** e o token renova automático, igual ao Bling. Não há rota nova na Vercel
 (o plano Hobby já está no teto de 12 funções): a conexão roda por um script
 local, e o refresh acontece dentro do cron diário que já existe.
 
+O Melhor Envio exige redirect **https**, então quem recebe a autorização é o
+próprio backend: a rota `/api/melhor-envio/callback` é um *rewrite* (vercel.json)
+pro callback OAuth que já existe (`api/bling/callback.js`), que distingue Bling
+de Melhor Envio pelo prefixo do `state`. Zero função nova.
+
 Passos (as chaves ficam com você — o assistente não as gera nem digita):
 
 1. No Melhor Envio → Integrações → Área Dev → **Cadastrar aplicativo**. Marque o
    escopo de **cálculo de frete** (`shipping-calculate`) e ponha a URL de
-   redirecionamento **exatamente** `http://localhost:8790/callback`. Anote o
-   **Client Id** e o **Client Secret**.
-2. Ponha os dois no `vercel-env.txt` (e depois na Vercel, pra produção):
+   redirecionamento **exatamente**
+   `https://api.soarmacao.com.br/api/melhor-envio/callback`. Anote o **Client Id**
+   e o **Client Secret**.
+2. Ponha os dois no `vercel-env.txt` **e** na Vercel (produção):
    ```
    MELHOR_ENVIO_CLIENT_ID='...'
    MELHOR_ENVIO_CLIENT_SECRET='...'
    ```
-3. Conecte (uma vez): `node scripts/melhor-envio-conectar.js` — ele abre a URL
-   de consentimento; você autoriza no navegador logado na conta; os tokens vão
-   pro Supabase. Pronto, não roda de novo.
+3. Faça o **deploy** (o callback precisa estar no ar pra receber a autorização).
+4. Conecte (uma vez): `node scripts/melhor-envio-conectar.js` imprime a URL de
+   consentimento; abra no navegador logado na conta e autorize; o backend grava
+   os tokens no Supabase. Pronto, não roda de novo.
 
 **Variáveis (na Vercel):**
 
 | Variável | O que é |
 |---|---|
 | `MELHOR_ENVIO_CLIENT_ID` / `MELHOR_ENVIO_CLIENT_SECRET` | Do app cadastrado na Área Dev. Sem eles, a loja usa a tabela fixa. |
-| `MELHOR_ENVIO_REDIRECT_URI` | Opcional; padrão `http://localhost:8790/callback` (o do script de conexão). |
+| `MELHOR_ENVIO_REDIRECT_URI` | Opcional; padrão `https://api.soarmacao.com.br/api/melhor-envio/callback`. Tem que bater com o registrado no app. |
 | `MELHOR_ENVIO_TOKEN` | Opcional: um access_token cru pra pular o OAuth num teste rápido (expira e não renova). |
 
 **Margem e regra (têm padrão; ajuste sem mexer no código):**
@@ -393,11 +400,13 @@ Passos (as chaves ficam com você — o assistente não as gera nem digita):
 
 1. Rode no SQL Editor do Supabase: `db/migracao-frete-bling.sql` **e**
    `db/migracao-melhor-envio-tokens.sql`.
-2. Cadastre o app no Melhor Envio e conecte (seção "Autenticação do Melhor
-   Envio" acima): Client Id/Secret no env + `node scripts/melhor-envio-conectar.js`.
-3. Confira com `node scripts/cotar-melhor-envio.js 41820-021` (Salvador) e
-   `... 01310-100` (SP) — dá pra ver a Econômica, a Expressa e a margem.
-4. `vercel env add` do `MELHOR_ENVIO_CLIENT_ID` e `MELHOR_ENVIO_CLIENT_SECRET`
-   em produção, e deploy por push na `main`.
+2. Cadastre o app no Melhor Envio (redirect
+   `https://api.soarmacao.com.br/api/melhor-envio/callback`) e ponha
+   `MELHOR_ENVIO_CLIENT_ID` / `MELHOR_ENVIO_CLIENT_SECRET` no `vercel-env.txt` e
+   na Vercel (`vercel env add`).
+3. **Deploy** por push na `main` (o callback precisa estar no ar).
+4. Conecte uma vez: `node scripts/melhor-envio-conectar.js` → abra a URL →
+   Autorizar. Depois confira com `node scripts/cotar-melhor-envio.js 41820-021`
+   (Salvador) e `... 01310-100` (SP).
 5. Faça uma venda de teste e confira: o pedido aparece no Bling com o serviço
    certo, e `v_margem_frete` mostra cobrado − custo por opção.

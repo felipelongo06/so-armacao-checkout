@@ -1,82 +1,45 @@
 /**
- * Conecta o Melhor Envio UMA vez (OAuth) — roda no seu Mac, não na Vercel.
+ * Conecta o Melhor Envio (OAuth) — imprime a URL de consentimento pra você abrir.
  *
  *   node scripts/melhor-envio-conectar.js
  *
- * Como funciona: sobe um servidorzinho local (localhost), abre a URL de
- * consentimento do Melhor Envio no seu navegador (já logado na conta da Só
- * Armação), você clica em "Autorizar", o Melhor Envio volta pro localhost com
- * o `code`, o script troca por access_token + refresh_token e grava no
- * Supabase. A partir daí o servidor renova sozinho — você não roda isto de novo.
+ * Como funciona: o Melhor Envio exige redirect https, então quem recebe a
+ * autorização é o SEU backend (rota /api/melhor-envio/callback, um rewrite pro
+ * callback OAuth que já existe — sem função nova). Este script só monta a URL
+ * de consentimento com um `state` assinado; você abre no navegador logado na
+ * conta da Só Armação, clica em Autorizar, e o backend grava os tokens no
+ * Supabase sozinho. Não precisa rodar de novo (o token renova automático).
  *
- * Pré-requisitos no vercel-env.txt (as chaves ficam com você, eu não as toco):
- *   MELHOR_ENVIO_CLIENT_ID, MELHOR_ENVIO_CLIENT_SECRET   (do app na Área Dev)
- *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY              (já estão aí)
- * E no app do Melhor Envio, a URL de redirecionamento tem que ser EXATAMENTE
- * a que aparecer abaixo (padrão http://localhost:8790/callback).
+ * PRÉ-REQUISITO: o backend com este código já tem que estar no ar (deploy feito)
+ * e com MELHOR_ENVIO_CLIENT_ID/SECRET + CRON_SECRET nas variáveis da Vercel.
+ *
+ * No vercel-env.txt local (pra este script montar a URL): MELHOR_ENVIO_CLIENT_ID
+ * e CRON_SECRET. As chaves ficam com você — o assistente não as toca.
  */
-import http from 'node:http';
-import crypto from 'node:crypto';
 import { carregarEnv } from '../lib/carregar-env.js';
 carregarEnv();
 
-const { urlAutorizacao, concluirAutorizacao, redirectUri, baseUrl, escopo } = await import('../lib/melhor-envio.js');
+const { urlAutorizacao, gerarState, redirectUri, baseUrl, escopo, melhorEnvioConectado } = await import('../lib/melhor-envio.js');
 
-const porta = Number(new URL(redirectUri()).port || 8790);
-const state = crypto.randomBytes(12).toString('hex');
-
-if (!process.env.MELHOR_ENVIO_CLIENT_ID || !process.env.MELHOR_ENVIO_CLIENT_SECRET) {
-  console.error('\nFalta MELHOR_ENVIO_CLIENT_ID / MELHOR_ENVIO_CLIENT_SECRET no vercel-env.txt.');
-  console.error('Pegue no Melhor Envio → Integrações → Área Dev → seu app.\n');
+if (!process.env.MELHOR_ENVIO_CLIENT_ID) {
+  console.error('\nFalta MELHOR_ENVIO_CLIENT_ID no vercel-env.txt (pegue no app da Área Dev).\n');
   process.exit(1);
 }
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('\nFalta SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY no vercel-env.txt.\n');
+if (!process.env.CRON_SECRET) {
+  console.error('\nFalta CRON_SECRET no vercel-env.txt (é o mesmo segredo dos crons/admin).\n');
   process.exit(1);
 }
 
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://localhost:${porta}`);
-  if (url.pathname !== new URL(redirectUri()).pathname) { res.writeHead(404).end('não é aqui'); return; }
+if (await melhorEnvioConectado()) {
+  console.log('\nMelhor Envio JÁ está conectado (há token no Supabase). Reconectar só se der erro de auth.');
+  console.log('Pra testar:  node scripts/cotar-melhor-envio.js 41820-021\n');
+}
 
-  const erro = url.searchParams.get('error');
-  const code = url.searchParams.get('code');
-  const devolvido = url.searchParams.get('state');
-
-  const pagina = (titulo, corpo) => `<!doctype html><meta charset="utf-8"><title>${titulo}</title>
-<body style="font:16px/1.6 -apple-system,Arial,sans-serif;background:#F4EFE2;color:#06301B;max-width:560px;margin:40px auto;padding:0 20px">
-<h1 style="color:#0B6B3A">${titulo}</h1>${corpo}<p>Pode fechar esta aba e voltar pro terminal.</p></body>`;
-
-  if (erro) {
-    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' }).end(pagina('Melhor Envio recusou', `<p>${erro}: ${url.searchParams.get('error_description') || ''}</p>`));
-    console.error('\n✗ Autorização recusada:', erro); server.close(); process.exit(1);
-  }
-  if (devolvido && devolvido !== state) {
-    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' }).end(pagina('State não confere', '<p>Comece de novo.</p>'));
-    console.error('\n✗ state divergente — recomece.'); server.close(); process.exit(1);
-  }
-  if (!code) { res.writeHead(400).end('sem code'); return; }
-
-  try {
-    const t = await concluirAutorizacao(code);
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(pagina('Melhor Envio conectado ✓',
-      `<p>Tokens gravados no Supabase. Vencem em <strong>${new Date(t.expira_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</strong> e renovam sozinhos.</p>`));
-    console.log(`\n✓ Conectado. access_token vence em ${new Date(t.expira_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} (renova sozinho).`);
-    console.log('  Teste agora:  node scripts/cotar-melhor-envio.js 41820-021\n');
-  } catch (e) {
-    res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' }).end(pagina('Falhou ao trocar o code', `<p>${e.message}</p>`));
-    console.error('\n✗ Falha ao trocar o code por tokens:', e.message, '\n');
-  } finally {
-    server.close(); process.exit(0);
-  }
-});
-
-server.listen(porta, () => {
-  const url = urlAutorizacao(state);
-  console.log(`\nMelhor Envio (${baseUrl().includes('sandbox') ? 'SANDBOX' : 'PRODUÇÃO'}) — conectando, escopo "${escopo()}".`);
-  console.log(`Servidor local ouvindo em ${redirectUri()}`);
-  console.log('\n1) No app do Melhor Envio (Área Dev), confirme que a URL de redirecionamento é exatamente:');
-  console.log(`     ${redirectUri()}`);
-  console.log('\n2) Abra esta URL no navegador logado na conta da Só Armação e clique em Autorizar:\n');
-  console.log(`     ${url}\n`);
-});
+const url = urlAutorizacao(gerarState());
+console.log(`\nMelhor Envio (${baseUrl().includes('sandbox') ? 'SANDBOX' : 'PRODUÇÃO'}) — escopo "${escopo()}".`);
+console.log('\n1) Confirme que a URL de redirecionamento do app (Área Dev) é EXATAMENTE:');
+console.log(`     ${redirectUri()}`);
+console.log('\n2) Abra esta URL no navegador logado na conta da Só Armação e clique em Autorizar:\n');
+console.log(`     ${url}\n`);
+console.log('3) A página do seu backend vai dizer "Melhor Envio conectado ✓". Depois:');
+console.log('     node scripts/cotar-melhor-envio.js 41820-021\n');

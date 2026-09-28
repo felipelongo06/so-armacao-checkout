@@ -8,7 +8,8 @@
   },
   "rewrites": [
     { "source": "/api/feed/meta.csv", "destination": "/api/catalogo?feed=meta" },
-    { "source": "/api/feed/google.tsv", "destination": "/api/catalogo?feed=google" }
+    { "source": "/api/feed/google.tsv", "destination": "/api/catalogo?feed=google" },
+    { "source": "/api/melhor-envio/callback", "destination": "/api/bling/callback" }
   ],
   "crons": [
     { "path": "/api/cron/reconciliar", "schedule": "0 9 * * *" },

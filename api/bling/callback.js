@@ -9,9 +9,30 @@
  */
 import { paginaHtml } from '../../lib/admin.js';
 import { concluirAutorizacao, stateValido } from '../../lib/bling.js';
+import { concluirAutorizacao as concluirMelhorEnvio, stateValido as stateValidoMelhorEnvio } from '../../lib/melhor-envio.js';
 
 export default async function handler(req, res) {
   const { code, state, error, error_description: desc } = req.query || {};
+
+  // Callback compartilhado: se o `state` vem com o prefixo "me.", é o Melhor
+  // Envio (rewrite /api/melhor-envio/callback → aqui, pra não gastar função).
+  if (String(state || '').startsWith('me.')) {
+    if (error) return paginaHtml(res, 'Melhor Envio recusou a autorização', `<p class="erro">${error}: ${desc || ''}</p>`, 400);
+    if (!stateValidoMelhorEnvio(state)) {
+      return paginaHtml(res, 'Autorização inválida ou expirada',
+        '<p class="erro">O <code>state</code> não confere. Rode de novo <code>node scripts/melhor-envio-conectar.js</code>.</p>', 400);
+    }
+    if (!code) return paginaHtml(res, 'Faltou o code', '<p class="erro">O Melhor Envio não mandou o <code>code</code>.</p>', 400);
+    try {
+      const t = await concluirMelhorEnvio(String(code));
+      return paginaHtml(res, 'Melhor Envio conectado ✓', `
+        <p class="ok">Tokens gravados. O access_token vence em <strong>${new Date(t.expira_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</strong> e renova sozinho.</p>
+        <p>Testa a cotação:<br><code>node scripts/cotar-melhor-envio.js 41820-021</code></p>`);
+    } catch (e) {
+      console.error('[melhor-envio/callback]', e);
+      return paginaHtml(res, 'Falha ao conectar o Melhor Envio', `<p class="erro">${e.message}</p><p>Confira <code>MELHOR_ENVIO_CLIENT_ID/SECRET</code> na Vercel e a URL de redirecionamento do app.</p>`, 500);
+    }
+  }
 
   if (error) {
     return paginaHtml(res, 'Bling recusou a autorização', `<p class="erro">${error}: ${desc || ''}</p>`, 400);
