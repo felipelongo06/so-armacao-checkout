@@ -55,6 +55,7 @@ confirma o dinheiro — nunca na tela de "obrigado", que qualquer um recarrega.
 | `api/bling/sync.js` | Sincroniza o catálogo inteiro Bling → `produtos` (cron diário + à mão). |
 | `api/bling/webhook.js` | Recebe produto/estoque do Bling em tempo real (assinatura HMAC). |
 | `api/bling/migrar-tags.js` | Uma vez: cria os campos customizados (Gênero, Material, Ocasião, Tom de pele) e copia as tags. |
+| `api/bling/corrigir-descricoes.js` | Uma vez: tira "garantia de 1 ano e troca em até 30 dias" das descrições no Bling (vira "troca grátis em até 7 dias úteis"). `?somente=ver` só mostra. |
 | `lib/bling.js` | Cliente da API v3 do Bling: tokens, refresh, limite de 3 req/s. |
 | `lib/catalogo-sync.js` | Mapeamento produto do Bling → linha de `produtos` (uma por cor). |
 | `lib/catalogo.js` | **Autoridade de preço.** Preço e estoque da tabela `produtos`, desconto de 30% só no 2º óculos, frete. |
