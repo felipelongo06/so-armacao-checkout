@@ -20,6 +20,18 @@ const COLUNAS = [
 
 const FACETAS = ['formato', 'genero', 'material', 'ocasiao', 'tom_pele'];
 
+// Tipo de cada variação: óculos de GRAU ou de SOL. O Bling ainda não tem esse
+// atributo, então sai do próprio cadastro: nome do modelo "de Sol" ou cor da
+// variação com "Lente Escura/Marrom/..." (lente cristal/transparente = grau).
+// Um mesmo modelo pode ter as duas coisas (ex.: Amalfi Oval: lente cristal e lente marrom).
+const RE_LENTE_SOL = /lente\s+(escura|marrom|fum[êe]|preta|cinza|verde|azul|degrad|espelhad|polarizad)/i;
+const TIPOS = { grau: 'De grau', sol: 'De sol' };
+function tipoDaLinha(r) {
+  if (/\bde sol\b/i.test(r.nome || '')) return 'sol';
+  if (RE_LENTE_SOL.test(`${r.cor || ''} ${r.nome_variacao || ''}`)) return 'sol';
+  return 'grau';
+}
+
 function slug(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -57,6 +69,7 @@ function agrupar(linhas) {
       estoque: Number(r.estoque) || 0,
       imagem: r.imagem_url || null,
       imagens: Array.isArray(r.imagens) ? r.imagens : [],
+      tipo: tipoDaLinha(r),
       url: `/p/${r.sku}/`,
       ordem: r.ordem || 0,
     });
@@ -71,6 +84,8 @@ function agrupar(linhas) {
     p.estoque_total = p.variacoes.reduce((s, v) => s + v.estoque, 0);
     p.imagem = (p.variacoes.find((v) => v.estoque > 0) || p.variacoes[0])?.imagem || null;
     p.cores = p.variacoes.map((v) => v.cor).filter(Boolean);
+    p.tipos = ['grau', 'sol'].filter((t) => p.variacoes.some((v) => v.tipo === t));
+    p.tipo = p.tipos.length === 1 ? p.tipos[0] : 'grau-e-sol';
     return p;
   });
 
@@ -87,6 +102,9 @@ function facetas(produtos) {
     out[f] = [...cont.entries()].map(([valor, total]) => ({ valor, slug: slug(valor), total }))
       .sort((a, b) => a.valor.localeCompare(b.valor, 'pt-BR'));
   }
+  out.tipo = Object.entries(TIPOS)
+    .map(([slugTipo, valor]) => ({ valor, slug: slugTipo, total: produtos.filter((p) => (p.tipos || []).includes(slugTipo)).length }))
+    .filter((t) => t.total > 0);
   const cores = new Map();
   for (const p of produtos) for (const v of p.variacoes) if (v.cor) cores.set(v.cor, (cores.get(v.cor) || 0) + 1);
   out.cor = [...cores.entries()].map(([valor, total]) => ({ valor, slug: slug(valor), total }))
