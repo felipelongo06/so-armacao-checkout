@@ -22,6 +22,7 @@ import { exigirSupabase } from '../../lib/supabase.js';
 import { metaPurchase, ga4Purchase } from '../../lib/tracking.js';
 import { compararSegredo } from '../../lib/validacao.js';
 import { pendentesDeBling, criarPedidoNoBling } from '../../lib/bling-pedido.js';
+import { manterTokenVivo } from '../../lib/melhor-envio.js';
 
 const JANELA_DIAS = Number(process.env.RECON_JANELA_DIAS || 3);
 const MAX_POR_EXECUCAO = Number(process.env.RECON_MAX || 8);
@@ -132,6 +133,10 @@ export default async function handler(req, res) {
       }
     }
 
+    // ---- 1c. mantém o token do Melhor Envio quente ----
+    // Renova antes de vencer mesmo em dia de pouca venda, pra o frete nunca lapsar.
+    const freteToken = await manterTokenVivo();
+
     // ---- 2. COBERTURA do periodo ----
     const ok = (r, k) => r.tracking_enviado?.[k] === true;
     const cobertura = {
@@ -144,8 +149,8 @@ export default async function handler(req, res) {
       receita_reais: Math.round(recentes.reduce((s, r) => s + (r.total_centavos || 0), 0)) / 100,
     };
 
-    console.log('[reconciliar] corrigidos=%d avaliados=%d bling_criados=%d bling_falhos=%d cobertura=%o', corrigidos, falhos.length, blingCriados, blingFalhos, cobertura);
-    return res.status(200).json({ ok: true, corrigidos, avaliados: falhos.length, bling: { criados: blingCriados, falhos: blingFalhos }, cobertura });
+    console.log('[reconciliar] corrigidos=%d avaliados=%d bling_criados=%d bling_falhos=%d frete_token=%o cobertura=%o', corrigidos, falhos.length, blingCriados, blingFalhos, freteToken, cobertura);
+    return res.status(200).json({ ok: true, corrigidos, avaliados: falhos.length, bling: { criados: blingCriados, falhos: blingFalhos }, frete_token: freteToken, cobertura });
 
   } catch (err) {
     console.error('[reconciliar] erro:', err);

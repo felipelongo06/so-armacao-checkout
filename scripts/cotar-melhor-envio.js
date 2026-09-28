@@ -11,6 +11,7 @@ import { carregarEnv } from '../lib/carregar-env.js';
 carregarEnv();
 
 const { cotarMelhorEnvio, montarOpcoes, configFrete, volumeDoPedido } = await import('../lib/frete.js');
+const { melhorEnvioConectado } = await import('../lib/melhor-envio.js');
 
 const cep = String(process.argv[2] || '').replace(/\D/g, '');
 const unidades = Number(process.argv[3] || 1);
@@ -20,8 +21,9 @@ if (cep.length !== 8) {
 }
 
 const cfg = configFrete();
-if (!cfg.token) {
-  console.error('MELHOR_ENVIO_TOKEN não está no vercel-env.txt / .env.');
+if (!process.env.MELHOR_ENVIO_TOKEN && !(await melhorEnvioConectado())) {
+  console.error('\nMelhor Envio não conectado. Rode primeiro:  node scripts/melhor-envio-conectar.js');
+  console.error('(ou ponha um MELHOR_ENVIO_TOKEN cru no vercel-env.txt só pra um teste rápido).\n');
   process.exit(1);
 }
 const reais = (c) => (c / 100).toFixed(2).replace('.', ',');

@@ -9,7 +9,10 @@ import { precoDeVenda, montarOpcoes, normalizarServicos, volumeDoPedido, textoPr
 import { montarPedido, resumoPublico } from '../lib/catalogo.js';
 
 // Configuração fixa pros testes (independe do que estiver na Vercel/env local).
+// Sem token e sem Supabase: cotarFrete deve cair na tabela fixa (origem null → null).
 delete process.env.MELHOR_ENVIO_TOKEN;
+delete process.env.SUPABASE_URL;
+delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 delete process.env.FRETE_GRATIS_PROMO_ACIMA_DE;
 process.env.FRETE_ECONOMICO_ADICIONAL_CENTAVOS = '300';
 process.env.FRETE_EXPRESSO_ADICIONAL_CENTAVOS = '1000';

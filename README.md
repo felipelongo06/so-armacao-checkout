@@ -324,19 +324,45 @@ de novo.
 | Arquivo | Função |
 |---|---|
 | `lib/frete.js` | Cotação no Melhor Envio, regra Econômico/Expresso e a margem (arredonda pra ,90). |
+| `lib/melhor-envio.js` | OAuth do Melhor Envio com refresh automático (tokens no Supabase, como o Bling). |
 | `lib/bling-pedido.js` | Cria o contato + pedido de venda no Bling a partir do pedido pago. |
 | `db/migracao-frete-bling.sql` | Colunas de frete/serviço e do vínculo com o Bling em `pedidos`; views `v_margem_frete` e `v_pedidos_sem_bling`. |
-| `scripts/cotar-melhor-envio.js` | Cota um CEP na mão e mostra o que a loja ofereceria (valida o token). |
+| `db/migracao-melhor-envio-tokens.sql` | Tabela `melhor_envio_tokens` (OAuth). |
+| `scripts/melhor-envio-conectar.js` | Conecta o Melhor Envio uma vez (OAuth por loopback local). |
+| `scripts/cotar-melhor-envio.js` | Cota um CEP na mão e mostra o que a loja ofereceria (valida a conexão). |
 | `scripts/bling-pedido.js` | Cria/reprocessa no Bling um pedido pago (`--pendentes`, `--ver`, `--forcar`). |
 | `scripts/testa-frete.js` · `testa-bling-pedido.js` | Testes offline das duas regras. |
 
-### Variáveis de ambiente novas (na Vercel)
+### Autenticação do Melhor Envio (OAuth, renova sozinho)
 
-**Obrigatória pra cotar de verdade:**
+O Melhor Envio não tem "token avulso" — é OAuth, e o token expira. Em vez de
+colar um token cru (que pararia sozinho em semanas), a conexão é feita **uma
+vez** e o token renova automático, igual ao Bling. Não há rota nova na Vercel
+(o plano Hobby já está no teto de 12 funções): a conexão roda por um script
+local, e o refresh acontece dentro do cron diário que já existe.
+
+Passos (as chaves ficam com você — o assistente não as gera nem digita):
+
+1. No Melhor Envio → Integrações → Área Dev → **Cadastrar aplicativo**. Marque o
+   escopo de **cálculo de frete** (`shipping-calculate`) e ponha a URL de
+   redirecionamento **exatamente** `http://localhost:8790/callback`. Anote o
+   **Client Id** e o **Client Secret**.
+2. Ponha os dois no `vercel-env.txt` (e depois na Vercel, pra produção):
+   ```
+   MELHOR_ENVIO_CLIENT_ID='...'
+   MELHOR_ENVIO_CLIENT_SECRET='...'
+   ```
+3. Conecte (uma vez): `node scripts/melhor-envio-conectar.js` — ele abre a URL
+   de consentimento; você autoriza no navegador logado na conta; os tokens vão
+   pro Supabase. Pronto, não roda de novo.
+
+**Variáveis (na Vercel):**
 
 | Variável | O que é |
 |---|---|
-| `MELHOR_ENVIO_TOKEN` | Token da conta: painel do Melhor Envio → Integrações → Área Dev → gerar token com escopo de **cálculo de frete** (`shipping-calculate`). Sem ele, a loja usa a tabela fixa. |
+| `MELHOR_ENVIO_CLIENT_ID` / `MELHOR_ENVIO_CLIENT_SECRET` | Do app cadastrado na Área Dev. Sem eles, a loja usa a tabela fixa. |
+| `MELHOR_ENVIO_REDIRECT_URI` | Opcional; padrão `http://localhost:8790/callback` (o do script de conexão). |
+| `MELHOR_ENVIO_TOKEN` | Opcional: um access_token cru pra pular o OAuth num teste rápido (expira e não renova). |
 
 **Margem e regra (têm padrão; ajuste sem mexer no código):**
 
@@ -365,11 +391,13 @@ de novo.
 
 ### Passo a passo pra ligar
 
-1. Rode `db/migracao-frete-bling.sql` no SQL Editor do Supabase.
-2. Gere o token no Melhor Envio (escopo de cálculo de frete) e ponha em
-   `MELHOR_ENVIO_TOKEN` na Vercel (`vercel env add`).
+1. Rode no SQL Editor do Supabase: `db/migracao-frete-bling.sql` **e**
+   `db/migracao-melhor-envio-tokens.sql`.
+2. Cadastre o app no Melhor Envio e conecte (seção "Autenticação do Melhor
+   Envio" acima): Client Id/Secret no env + `node scripts/melhor-envio-conectar.js`.
 3. Confira com `node scripts/cotar-melhor-envio.js 41820-021` (Salvador) e
    `... 01310-100` (SP) — dá pra ver a Econômica, a Expressa e a margem.
-4. Deploy por push na `main`.
+4. `vercel env add` do `MELHOR_ENVIO_CLIENT_ID` e `MELHOR_ENVIO_CLIENT_SECRET`
+   em produção, e deploy por push na `main`.
 5. Faça uma venda de teste e confira: o pedido aparece no Bling com o serviço
    certo, e `v_margem_frete` mostra cobrado − custo por opção.
