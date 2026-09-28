@@ -4,12 +4,11 @@
     "api/*.js": { "maxDuration": 15 },
     "api/pedido/*.js": { "maxDuration": 15 },
     "api/cron/*.js": { "maxDuration": 15 },
-    "api/bling/*.js": { "maxDuration": 60 },
-    "api/feed/*.js": { "maxDuration": 15 }
+    "api/bling/*.js": { "maxDuration": 60 }
   },
   "rewrites": [
-    { "source": "/api/feed/meta.csv", "destination": "/api/feed/meta" },
-    { "source": "/api/feed/google.tsv", "destination": "/api/feed/meta?formato=google" }
+    { "source": "/api/feed/meta.csv", "destination": "/api/catalogo?feed=meta" },
+    { "source": "/api/feed/google.tsv", "destination": "/api/catalogo?feed=google" }
   ],
   "crons": [
     { "path": "/api/cron/reconciliar", "schedule": "0 9 * * *" },
