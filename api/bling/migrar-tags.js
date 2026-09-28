@@ -126,7 +126,26 @@ export default async function handler(req, res) {
     if (faltando.length) return res.status(200).json({ ok: false, etapa: 'criar', faltando, ...resultado });
     if (somente === 'criar') return res.status(200).json({ ok: true, etapa: 'criar', campos: ids, ...resultado });
 
-    const codigos = Object.keys(TAGS_POR_CODIGO);
+    // Campo tipo Lista: o Bling só mostra o valor na tela quando `valor` é o ID da
+    // opção e `item` é o nome dela (é assim que o próprio painel grava). Gravar só o
+    // nome funciona pra API, mas fica invisível no cadastro — e some quando alguém
+    // salva o produto pelo painel.
+    const opcoesPorCampo = {};
+    for (const [coluna, idCampo] of Object.entries(ids)) {
+      try {
+        const def = (await bling('GET', `/campos-customizados/${idCampo}`))?.data;
+        opcoesPorCampo[coluna] = {};
+        for (const o of def?.opcoes || []) opcoesPorCampo[coluna][semAcento(o.nome)] = { id: o.id, nome: o.nome };
+      } catch (e) { opcoesPorCampo[coluna] = {}; }
+    }
+    const montarCampo = (coluna, texto) => {
+      const op = (opcoesPorCampo[coluna] || {})[semAcento(texto)];
+      return op ? { idCampoCustomizado: ids[coluna], valor: String(op.id), item: op.nome } : { idCampoCustomizado: ids[coluna], valor: texto, item: texto };
+    };
+
+    // ?codigos=A,B,C processa só esses (repetição pontual); senão, todos os do export.
+    const filtro = String(req.query?.codigos || '').split(',').map(limparCodigo).filter(Boolean);
+    const codigos = filtro.length ? filtro.filter((c) => TAGS_POR_CODIGO[c]) : Object.keys(TAGS_POR_CODIGO);
     const idsPorCodigo = await localizarIdsPorCodigo(codigos);
 
     const preenchidos = [], erros = [], semValor = [];
@@ -138,15 +157,26 @@ export default async function handler(req, res) {
       const idProduto = idsPorCodigo[codigo] || tags.bling_id;
       const campos = Object.keys(NOMES)
         .filter((k) => tags[k])
-        .map((k) => ({ idCampoCustomizado: ids[k], valor: tags[k], item: tags[k] }));
+        .map((k) => montarCampo(k, tags[k]));
       if (!campos.length) { semValor.push(codigo); continue; }
-      try {
-        await bling('PATCH', `/produtos/${idProduto}`, { body: { camposCustomizados: campos } });
-        preenchidos.push(codigo);
-      } catch (e) {
-        erros.push({ codigo, idProduto, erro: e.message, detalhe: e.corpo || null });
+      // Bling limita a 3 req/s e ainda derruba com 429 em rajada: espaça e insiste.
+      let ok = false, ultimo = null;
+      for (let tentativa = 0; tentativa < 4 && !ok; tentativa++) {
+        try {
+          await bling('PATCH', `/produtos/${idProduto}`, { body: { camposCustomizados: campos } });
+          ok = true;
+        } catch (e) {
+          ultimo = e;
+          if (!(e instanceof BlingError && e.status === 429) || orcamento.estourou()) break;
+          await new Promise((r) => setTimeout(r, 2500 * (tentativa + 1)));
+        }
+      }
+      if (ok) preenchidos.push(codigo);
+      else {
+        erros.push({ codigo, idProduto, erro: ultimo?.message, detalhe: ultimo?.corpo || null });
         if (erros.length >= 5) break; // provavelmente formato errado: para e mostra
       }
+      await new Promise((r) => setTimeout(r, 700));
     }
 
     const concluido = i >= codigos.length && erros.length < 5;
