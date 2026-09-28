@@ -112,8 +112,10 @@ export default async function handler(req, res) {
       if (fmt === '4') Object.assign(campo, { valor, item: valor, idVinculo: opcao?.id });
       if (fmt === '5') Object.assign(campo, { valor: String(opcao?.id ?? valor), item: valor });
       let respostaPatch = null, erroPatch = null;
-      try { respostaPatch = await bling('PATCH', `/produtos/${idProduto}`, { body: { camposCustomizados: [campo] } }); }
-      catch (e) { erroPatch = { mensagem: e.message, corpo: e.corpo || null }; }
+      if (fmt !== '0') {
+        try { respostaPatch = await bling('PATCH', `/produtos/${idProduto}`, { body: { camposCustomizados: [campo] } }); }
+        catch (e) { erroPatch = { mensagem: e.message, corpo: e.corpo || null }; }
+      }
       const depois = (await bling('GET', `/produtos/${idProduto}`))?.data;
       return res.status(200).json({ ok: !erroPatch, etapa: 'teste', codigo, idProduto, fmt, payload: campo, definicao_campo: definicao,
         campos_antes: antes?.camposCustomizados ?? null, resposta_patch: respostaPatch, erro_patch: erroPatch, campos_depois: depois?.camposCustomizados ?? null });
