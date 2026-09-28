@@ -50,14 +50,14 @@ confirma o dinheiro — nunca na tela de "obrigado", que qualquer um recarrega.
 | `api/pedido/[id].js` | Polling de status da tela de Pix. |
 | `lib/asaas.js` | Cliente HTTP. Único lugar que toca a chave. |
 | `api/catalogo.js` | Catálogo público (JSON) que a loja lê: modelos, cores, preços, estoque, facetas dos filtros. |
-| `api/cotar.js` | Cotação do carrinho pela mesma regra do checkout (preço, Leve 2/3, frete). A loja nunca calcula sozinha. |
+| `api/cotar.js` | Cotação do carrinho pela mesma regra do checkout (preço, 30% no 2º óculos, frete). A loja nunca calcula sozinha. |
 | `api/bling/auth.js` · `callback.js` | Conexão OAuth com o Bling (uma vez; o token renova sozinho). |
 | `api/bling/sync.js` | Sincroniza o catálogo inteiro Bling → `produtos` (cron diário + à mão). |
 | `api/bling/webhook.js` | Recebe produto/estoque do Bling em tempo real (assinatura HMAC). |
 | `api/bling/migrar-tags.js` | Uma vez: cria os campos customizados (Gênero, Material, Ocasião, Tom de pele) e copia as tags. |
 | `lib/bling.js` | Cliente da API v3 do Bling: tokens, refresh, limite de 3 req/s. |
 | `lib/catalogo-sync.js` | Mapeamento produto do Bling → linha de `produtos` (uma por cor). |
-| `lib/catalogo.js` | **Autoridade de preço.** Preço e estoque da tabela `produtos`, Leve 2/3, frete. |
+| `lib/catalogo.js` | **Autoridade de preço.** Preço e estoque da tabela `produtos`, desconto de 30% só no 2º óculos, frete. |
 | `lib/tracking.js` | Fan-out server-side: Meta CAPI, GA4 MP. |
 | `lib/validacao.js` | CPF/e-mail/CEP, hash LGPD, comparação em tempo constante. |
 | `lib/carregar-env.js` | Lê o `vercel-env.txt` nos scripts, pra chave nenhuma ir pro histórico. |
@@ -243,8 +243,10 @@ que sumiu do Bling. `bling_sync` guarda o log de cada rodada.
   venda** (`montarPedido` recusa quantidade acima do saldo).
 - Não existe mais piso de preço nem catálogo de fallback: com o Supabase fora,
   o checkout responde 503 em vez de vender a preço velho.
-- Leve 2/3 e frete são calculados aqui; a loja pede a cotação em `/api/cotar`
-  e mostra o que voltou. Mudar a regra comercial muda a tela junto.
+- O único desconto é 30% no 2º óculos (o mais barato de cada par; não existe
+  "Leve 3" nem percentual sobre o pedido inteiro). Desconto e frete são
+  calculados aqui; a loja pede a cotação em `/api/cotar` e mostra o que voltou.
+  Mudar a regra comercial muda a tela junto.
 
 ---
 
