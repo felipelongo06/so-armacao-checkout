@@ -1,6 +1,8 @@
 /**
  * GET /api/catalogo            catálogo inteiro (só o que está ativo)
  * GET /api/catalogo?codigo=X   um produto (código do pai OU de uma variação)
+ * GET /api/catalogo?feed=meta  feed CSV pro catálogo do Meta (rota bonita: /api/feed/meta.csv)
+ * GET /api/catalogo?feed=google feed TSV pro Merchant Center (rota bonita: /api/feed/google.tsv)
  *
  * É o que a loja lê pra montar vitrine, filtros e página de produto. Dados
  * públicos, por isso CORS aberto e cache na borda da Vercel (60 s, servindo
@@ -11,6 +13,7 @@
  */
 import { supabase } from '../lib/supabase.js';
 import { regrasPublicas, centavosParaReais } from '../lib/catalogo.js';
+import { gerarFeed } from '../lib/feed.js';
 
 const COLUNAS = [
   'sku', 'codigo_pai', 'nome', 'nome_variacao', 'cor', 'preco_centavos', 'estoque', 'formato',
@@ -122,6 +125,21 @@ export default async function handler(req, res) {
   if (!supabase) return res.status(503).json({ erro: 'Catalogo indisponivel.' });
 
   const codigo = req.query?.codigo ? String(req.query.codigo).trim().toUpperCase() : null;
+
+  // Feeds de catálogo (Meta / Google): as plataformas buscam a URL sozinhas.
+  if (req.query?.feed) {
+    try {
+      const f = await gerarFeed(String(req.query.feed));
+      res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=900');
+      res.setHeader('Content-Type', f.contentType);
+      res.setHeader('Content-Disposition', `inline; filename="${f.nomeArquivo}"`);
+      res.setHeader('X-Total-Itens', String(f.total));
+      return res.status(200).send(f.corpo);
+    } catch (err) {
+      console.error('[catalogo/feed] erro:', err);
+      return res.status(500).json({ erro: 'Falha ao gerar o feed.' });
+    }
+  }
 
   try {
     let q = supabase.from('produtos').select(COLUNAS).eq('ativo', true).not('bling_id', 'is', null);
