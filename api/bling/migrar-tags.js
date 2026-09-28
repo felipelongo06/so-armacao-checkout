@@ -92,6 +92,33 @@ export default async function handler(req, res) {
   const cursor = Math.max(0, parseInt(req.query?.cursor || '0', 10) || 0);
 
   try {
+    // Modo de teste: grava UM campo em UM produto com um formato de payload e
+    // devolve o que o Bling passou a retornar. ?somente=teste&codigo=YF8636&fmt=1..4
+    if (somente === 'teste') {
+      const { ids } = await garantirCampos(orcamento);
+      const codigo = limparCodigo(req.query?.codigo || Object.keys(TAGS_POR_CODIGO)[0]);
+      const fmt = String(req.query?.fmt || '1');
+      const tags = TAGS_POR_CODIGO[codigo] || {};
+      const valor = tags.genero || 'Feminino';
+      const definicao = (await bling('GET', `/campos-customizados/${ids.genero}`))?.data || null;
+      const opcao = (definicao?.opcoes || []).find((o) => semAcento(o.nome) === semAcento(valor)) || null;
+      const idsPorCodigo = await localizarIdsPorCodigo([codigo]);
+      const idProduto = idsPorCodigo[codigo] || tags.bling_id;
+      const antes = (await bling('GET', `/produtos/${idProduto}`))?.data;
+      const campo = { idCampoCustomizado: ids.genero };
+      if (fmt === '1') Object.assign(campo, { valor, item: valor });
+      if (fmt === '2') Object.assign(campo, { item: valor });
+      if (fmt === '3') Object.assign(campo, { valor });
+      if (fmt === '4') Object.assign(campo, { valor, item: valor, idVinculo: opcao?.id });
+      if (fmt === '5') Object.assign(campo, { valor: String(opcao?.id ?? valor), item: valor });
+      let respostaPatch = null, erroPatch = null;
+      try { respostaPatch = await bling('PATCH', `/produtos/${idProduto}`, { body: { camposCustomizados: [campo] } }); }
+      catch (e) { erroPatch = { mensagem: e.message, corpo: e.corpo || null }; }
+      const depois = (await bling('GET', `/produtos/${idProduto}`))?.data;
+      return res.status(200).json({ ok: !erroPatch, etapa: 'teste', codigo, idProduto, fmt, payload: campo, definicao_campo: definicao,
+        campos_antes: antes?.camposCustomizados ?? null, resposta_patch: respostaPatch, erro_patch: erroPatch, campos_depois: depois?.camposCustomizados ?? null });
+    }
+
     const { ids, resultado } = await garantirCampos(orcamento);
     const faltando = Object.keys(NOMES).filter((k) => !ids[k]);
     if (faltando.length) return res.status(200).json({ ok: false, etapa: 'criar', faltando, ...resultado });
